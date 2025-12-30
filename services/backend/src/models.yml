@@ -1,0 +1,42 @@
+ollama:
+  url: "http://host.docker.internal:11434"
+  vision_model: "llava:7b"
+  text_model: "llama3.2:3b"
+
+vision:
+  calibration_path: "/app/data/calibration.jpg"
+
+focus:
+  green_threshold: 50
+  yellow_threshold: 25
+
+voices:
+  hal:
+    model_name: "campwill/HAL-9000-Piper-TTS"
+    url: "https://huggingface.co/campwill/HAL-9000-Piper-TTS/resolve/main/hal_9000.onnx"
+    config_url: "https://huggingface.co/campwill/HAL-9000-Piper-TTS/resolve/main/hal_9000.onnx.json"
+    description: "HAL 9000 from 2001: A Space Odyssey - calm, monotone, ominous"
+    persona_file: "personas/Hal.txt"
+
+  sarcastic_friend:
+    model_name: "en_US-lessac-medium"
+    url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+    config_url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+    description: "American male voice - dry, sarcastic delivery"
+    persona_file: "personas/SarcasticFriend.txt"
+
+  motivational_coach:
+    model_name: "en_US-amy-medium"
+    url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx"
+    config_url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json"
+    description: "American female voice - energetic, encouraging"
+    persona_file: "personas/MotivationalCoach.txt"
+
+  drill_sergeant:
+    model_name: "en_GB-alan-medium"
+    url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx"
+    config_url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json"
+    description: "British male voice - stern, commanding"
+    persona_file: "personas/DrillSergeant.txt"
+
+default_voice: "hal"

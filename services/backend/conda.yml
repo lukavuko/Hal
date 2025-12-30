@@ -1,0 +1,21 @@
+# conda env create -f conda.yml
+# conda env update --name hal --file conda.yml --prune
+# conda activate hal
+name: hal
+channels:
+  - anaconda
+  - conda-forge
+  - defaults
+dependencies:
+  - pip==22.3.1
+  - python==3.11.0
+  - pip:
+      - -r requirements.txt
+      - gitpython
+      - ipython
+      - ipykernel
+
+## save env for viewing
+# conda env export > conda.yml
+# pip list > piplibs.txt
+# conda list -n hal > condalibs.txt
