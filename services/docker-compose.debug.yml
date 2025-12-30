@@ -1,0 +1,21 @@
+# Debug override - use with:
+# docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
+services:
+  interface:
+    ports:
+      - "8501:8501"
+      - "5050:5050"
+      - "5678:5678"  # debugpy port
+    environment:
+      - DEBUG=true
+    # Remove --wait-for-client to start immediately (debugger can attach anytime)
+    command: ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:5678", "-m", "streamlit", "run", "src/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
+  backend:
+    ports:
+      - "5000:5000"
+      - "5679:5679"  # debugpy port (different from interface)
+    environment:
+      - DEBUG=true
+    # Remove --wait-for-client to start immediately (debugger can attach anytime)
+    command: ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:5679", "src/app.py"]

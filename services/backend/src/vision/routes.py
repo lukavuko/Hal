@@ -35,17 +35,16 @@ def get_analyzer() -> FocusAnalyzer:
 def capture():
     """Capture a photo from webcam and return JPEG bytes."""
     webcam = get_webcam()
-
     frame = webcam.capture_frame()
+
     if frame is None:
         return jsonify({"error": "Failed to capture from webcam"}), 500
 
     # Convert PIL Image to JPEG bytes
     buf = BytesIO()
-    frame.save(buf, format="JPEG", quality=85)
+    frame.save(buf, format="JPEG", quality=100)
     buf.seek(0)
 
-    logger.info("Captured webcam frame")
     return Response(buf.getvalue(), mimetype="image/jpeg")
 
 
@@ -79,11 +78,16 @@ def analyze():
 
     image_file = request.files["image"]
     image_bytes = image_file.read()
-
     analyzer = get_analyzer()
     result = analyzer.analyze_from_bytes(image_bytes)
-
-    logger.info(
-        f"Analysis complete: score={result.get('focus_score')}, state={result.get('state')}"
-    )
+    logger.info(f"Analysis score={result.get('focus_score')}, {result.get('state')}")
     return jsonify(result), 200
+
+
+@vision_bp.route("/stream", methods=["GET"])
+def stream():
+    """Stream webcam as MJPEG video."""
+    webcam = get_webcam()
+    return Response(
+        webcam.generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame"
+    )

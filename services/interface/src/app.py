@@ -167,20 +167,18 @@ def calibration_wizard():
 
     with col1:
         # Preview button
-        if st.button("Preview Camera", use_container_width=True):
+        if st.button("Preview Camera", width="stretch"):
             try:
                 response = requests.post(f"{BACKEND_URL}/vision/capture", timeout=10)
                 if response.status_code == 200:
                     img = Image.open(BytesIO(response.content))
-                    st.image(img, caption="Camera Preview", use_container_width=True)
+                    st.image(img, caption="Camera Preview", width="stretch")
                 else:
                     st.error(f"Failed to get preview: {response.text}")
             except Exception as e:
                 st.error(f"Cannot connect to vision service: {e}")
 
-        if st.button(
-            "Capture Calibration Image", type="primary", use_container_width=True
-        ):
+        if st.button("Capture Calibration Image", type="primary", width="stretch"):
             try:
                 response = requests.post(f"{BACKEND_URL}/vision/capture", timeout=10)
                 if response.status_code == 200:
@@ -208,7 +206,7 @@ def calibration_wizard():
             st.image(
                 str(CALIBRATION_PATH),
                 caption="Current Calibration",
-                use_container_width=True,
+                width="stretch",
             )
 
 
@@ -253,7 +251,7 @@ def render_focus_chart():
         margin=dict(l=50, r=50, t=50, b=50),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def main_dashboard():
@@ -289,18 +287,18 @@ def main_dashboard():
     with col3:
         # Sampling control
         if st.session_state.sampling_active:
-            if st.button("Stop Sampling", type="secondary", use_container_width=True):
+            if st.button("Stop Sampling", type="secondary", width="stretch"):
                 st.session_state.sampling_active = False
                 update_shared_state({"sampling_active": False})
                 st.rerun()
         else:
-            if st.button("Start Sampling", type="primary", use_container_width=True):
+            if st.button("Start Sampling", type="primary", width="stretch"):
                 st.session_state.sampling_active = True
                 update_shared_state({"sampling_active": True})
                 st.rerun()
 
     with col4:
-        if st.button("Recalibrate", use_container_width=True):
+        if st.button("Recalibrate", width="stretch"):
             CALIBRATION_PATH.unlink(missing_ok=True)
             st.session_state.calibrated = False
             st.rerun()
@@ -324,7 +322,7 @@ def main_dashboard():
                 img = Image.open(
                     BytesIO(base64.b64decode(st.session_state.latest_image_b64))
                 )
-                st.image(img, use_container_width=True)
+                st.image(img, width="stretch")
 
                 # Display timestamp below image
                 if st.session_state.latest_timestamp:
@@ -356,9 +354,11 @@ def main_dashboard():
             selected_persona = st.selectbox(
                 "Voice Character",
                 personas,
-                index=personas.index(st.session_state.persona)
-                if st.session_state.persona in personas
-                else 0,
+                index=(
+                    personas.index(st.session_state.persona)
+                    if st.session_state.persona in personas
+                    else 0
+                ),
             )
 
             if selected_persona != st.session_state.persona:
@@ -367,7 +367,7 @@ def main_dashboard():
                 st.success(f"Switched to {selected_persona}")
 
             # Test audio button
-            if st.button("Test Audio", use_container_width=True):
+            if st.button("Test Audio", width="stretch"):
                 try:
                     speech_response = requests.post(
                         f"{BACKEND_URL}/speech/speak",

@@ -6,3 +6,4 @@ pillow>=10.1.0
 numpy>=1.26.0
 piper-tts>=1.2.0
 onnxruntime>=1.16.0
+debugpy>=1.8.0

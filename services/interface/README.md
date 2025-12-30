@@ -6,7 +6,7 @@ Streamlit-based UI for the Hal focus accountability system.
 
 The interface provides user controls for monitoring, calibration, and configuration. It communicates with the backend via REST APIs and displays real-time focus status.
 
-**Port**: 8000 (Streamlit) + 5050 (internal API)
+**Port**: 8501 (Streamlit) + 5050 (internal API)
 
 ## Architecture
 
@@ -15,7 +15,7 @@ The interface provides user controls for monitoring, calibration, and configurat
 │           Interface Container           │
 │  ┌─────────────────┐  ┌──────────────┐ │
 │  │   Streamlit     │  │  Flask API   │ │
-│  │   (port 8000)   │◄─┤  (port 5050) │ │
+│  │   (port 8501)   │◄─┤  (port 5050) │ │
 │  └────────┬────────┘  └──────────────┘ │
 └───────────┼─────────────────────────────┘
             │
@@ -77,7 +77,7 @@ plotly>=5.18.0
 ```bash
 cd services/interface
 docker build -t hal-interface .
-docker run -p 8000:8000 -p 5050:5050 hal-interface
+docker run -p 8501:8501 -p 5050:5050 hal-interface
 ```
 
-Access at: http://localhost:8000
+Access at: http://localhost:8501
