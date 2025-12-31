@@ -7,20 +7,12 @@ from pathlib import Path
 from typing import Dict
 
 import requests
+from piper import PiperVoice
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import get_default_voice, get_voice_config
-from config import list_voices as config_list_voices
+from config import get_default_voice, get_voice_config, list_voices
 
-logger = logging.getLogger(__name__)
-
-try:
-    from piper import PiperVoice
-
-    PIPER_AVAILABLE = True
-except ImportError:
-    PIPER_AVAILABLE = False
-    logger.warning("Piper not available")
+log = logging.getLogger(__name__)
 
 
 class PiperTTS:
@@ -29,64 +21,57 @@ class PiperTTS:
     def __init__(self):
         self.model_cache = Path(os.getenv("PIPER_CACHE", "/app/models"))
         self.model_cache.mkdir(parents=True, exist_ok=True)
-
         self.default_voice = get_default_voice()
         self.use_cuda = os.getenv("USE_CUDA", "false").lower() == "true"
-
         self.loaded_voices: Dict[str, "PiperVoice"] = {}
 
-        logger.info(
-            f"PiperTTS initialized (cache={self.model_cache}, cuda={self.use_cuda})"
-        )
+        log.info(f"TTS initialized (cache={self.model_cache}, cuda={self.use_cuda})")
 
-    def _download_model(self, voice_name: str) -> tuple[Path, Path]:
-        """Download voice model if not cached."""
-        voice_config = get_voice_config(voice_name)
-        if not voice_config:
-            raise ValueError(f"Voice '{voice_name}' not found in config")
+    def _normalize_voice(self, voice: str) -> str:
+        return voice.lower().replace(" ", "_")
+
+    def _download_model(self, voice: str) -> Path:
+        """Download voice model if not cached and return its path."""
+        voice = self._normalize_voice(voice)
+        voice_config = get_voice_config(voice)
 
         model_url = voice_config.get("url")
-        config_url = voice_config.get("config_url")
+        model_path = self.model_cache / f"{voice}.onnx"
+        config_path = self.model_cache / f"{voice}.onnx.json"
 
-        if not model_url or not config_url:
-            raise ValueError(f"Voice '{voice_name}' missing url or config_url")
-
-        model_path = self.model_cache / f"{voice_name}.onnx"
-        config_path = self.model_cache / f"{voice_name}.onnx.json"
-
+        # download model if not yet cached
         if not model_path.exists():
-            logger.info(f"Downloading model for voice '{voice_name}'...")
+            log.info(f"Downloading model for voice '{voice}'...")
             response = requests.get(model_url, timeout=300)
             response.raise_for_status()
             model_path.write_bytes(response.content)
-            logger.info(f"Model downloaded: {model_path}")
+            log.info(f"Model downloaded: {model_path}")
 
         if not config_path.exists():
-            logger.info(f"Downloading config for voice '{voice_name}'...")
-            response = requests.get(config_url, timeout=60)
+            log.info(f"Downloading config for voice '{voice}'...")
+            response = requests.get(
+                model_url.replace(".onnx", ".onnx.json"), timeout=300
+            )
             response.raise_for_status()
             config_path.write_bytes(response.content)
-            logger.info(f"Config downloaded: {config_path}")
+            log.info(f"Config downloaded: {config_path}")
 
-        return model_path, config_path
+        return model_path
 
-    def _load_voice(self, voice_name: str) -> "PiperVoice":
+    def _load_voice(self, voice: str) -> "PiperVoice":
         """Load a voice model, downloading if needed."""
-        if voice_name in self.loaded_voices:
-            return self.loaded_voices[voice_name]
+        voice = self._normalize_voice(voice)
+        if voice in self.loaded_voices:
+            return self.loaded_voices[voice]
 
-        if not PIPER_AVAILABLE:
-            raise RuntimeError("Piper library not available")
+        model_path = self._download_model(voice)
 
-        model_path, _ = self._download_model(voice_name)
+        log.info(f"Loading voice: {voice}")
+        voice_generator = PiperVoice.load(str(model_path), use_cuda=self.use_cuda)
+        self.loaded_voices[voice] = voice_generator
+        log.info(f"Voice loaded: {voice}")
 
-        logger.info(f"Loading voice: {voice_name}")
-        voice = PiperVoice.load(str(model_path), use_cuda=self.use_cuda)
-
-        self.loaded_voices[voice_name] = voice
-        logger.info(f"Voice loaded: {voice_name}")
-
-        return voice
+        return voice_generator
 
     def synthesize(self, text: str, voice_name: str = None) -> bytes:
         """
@@ -102,20 +87,14 @@ class PiperTTS:
         if voice_name is None:
             voice_name = self.default_voice
 
-        # Normalize voice name (interface may send "Hal" but config has "hal")
-        voice_name = voice_name.lower().replace(" ", "_")
-
         voice = self._load_voice(voice_name)
 
-        # Synthesize to in-memory WAV
         wav_buffer = BytesIO()
-
         with wave.open(wav_buffer, "wb") as wav_file:
             voice.synthesize_wav(text, wav_file)
-
         wav_buffer.seek(0)
         return wav_buffer.read()
 
     def list_voices(self) -> list:
         """List available voice names."""
-        return config_list_voices()
+        return list_voices()

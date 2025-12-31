@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import requests
+import ollama
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import get_focus_thresholds, get_ollama_config, get_persona_prompt
@@ -17,8 +17,12 @@ class FocusEvaluator:
 
     def __init__(self):
         ollama_config = get_ollama_config()
-        self.ollama_url = ollama_config.get("url", "http://host.docker.internal:11434")
+        ollama_url = ollama_config.get("url", "http://ollama:11434")
         self.text_model = ollama_config.get("text_model", "llama3.2:3b")
+        self.client = ollama.Client(host=ollama_url)
+
+        # Ensure model is available (pull if needed)
+        self._ensure_model_available()
 
         thresholds = get_focus_thresholds()
         self.green_threshold = thresholds.get("green_threshold", 50)
@@ -31,6 +35,28 @@ class FocusEvaluator:
         self.response_cooldown = 30  # seconds between responses
 
         logger.info(f"FocusEvaluator initialized (model={self.text_model})")
+
+    def _ensure_model_available(self):
+        """Check if the text model is available locally, pull if not."""
+        try:
+            available_models = self.client.list()
+            model_names = [
+                m.get("name", "") for m in available_models.get("models", [])
+            ]
+
+            # Check if our model (or a variant) is available
+            base_model = self.text_model.split(":")[0]
+            model_found = any(base_model in name for name in model_names)
+
+            if not model_found:
+                logger.info(f"Model '{self.text_model}' not found locally. Pulling...")
+                self.client.pull(self.text_model)
+                logger.info(f"Model '{self.text_model}' pulled successfully")
+            else:
+                logger.debug(f"Model '{self.text_model}' is available")
+
+        except Exception as e:
+            logger.warning(f"Could not verify model availability: {e}")
 
     def evaluate(
         self, analysis: Dict[str, Any], persona: str = "hal"
@@ -101,22 +127,17 @@ The user appears distracted. Here's the context:
 Generate ONE brief response (1-2 sentences max) to remind them to refocus. Stay in character."""
 
         try:
-            response = requests.post(
-                f"{self.ollama_url}/api/generate",
-                json={"model": self.text_model, "prompt": full_prompt, "stream": False},
-                timeout=30,
+            response = self.client.generate(
+                model=self.text_model,
+                prompt=full_prompt,
             )
 
-            if response.status_code == 200:
-                text = response.json().get("response", "").strip()
-                # Clean up response - take first 1-2 sentences
-                sentences = text.split(".")
-                if len(sentences) > 2:
-                    text = ".".join(sentences[:2]) + "."
-                return text
-            else:
-                logger.error(f"Ollama error: {response.status_code}")
-                return self._fallback_response(persona)
+            text = response.get("response", "").strip()
+            # Clean up response - take first 1-2 sentences
+            sentences = text.split(".")
+            if len(sentences) > 2:
+                text = ".".join(sentences[:2]) + "."
+            return text
 
         except Exception as e:
             logger.error(f"Failed to generate response: {e}")

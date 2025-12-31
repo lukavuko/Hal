@@ -91,3 +91,11 @@ def stream():
     return Response(
         webcam.generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+@vision_bp.route("/dimensions", methods=["GET"])
+def dimensions():
+    """Get webcam dimensions."""
+    webcam = get_webcam()
+    dims = webcam.get_dimensions()
+    return jsonify(dims), 200

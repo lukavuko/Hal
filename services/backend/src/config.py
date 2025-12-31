@@ -1,8 +1,11 @@
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 _config: Optional[Dict[str, Any]] = None
 
@@ -11,6 +14,7 @@ def load_config(config_path: str = None) -> Dict[str, Any]:
     """Load and cache the models.yml configuration."""
     global _config
 
+    # ensure we only load once
     if _config is not None:
         return _config
 
@@ -47,41 +51,34 @@ def get_ollama_config() -> Dict[str, str]:
     return ollama_config
 
 
-def normalize_voice_name(voice_name: str) -> str:
-    """Normalize voice name to match config keys (lowercase with underscores)."""
-    return voice_name.lower().replace(" ", "_")
-
-
-def get_voice_config(voice_name: str) -> Optional[Dict[str, Any]]:
+def get_voice_config(voice: str) -> Optional[Dict[str, Any]]:
     """Get configuration for a specific voice."""
     config = load_config()
     voices = config.get("voices", {})
-    # Normalize voice name to match config keys
-    normalized = normalize_voice_name(voice_name)
-    return voices.get(normalized)
+    voice_config = voices.get(voice)
 
-
-def get_persona_prompt(voice_name: str) -> str:
-    """Load persona prompt text file for a voice."""
-    voice_config = get_voice_config(voice_name)
     if not voice_config:
-        return (
-            "You are a focus accountability assistant. Remind the user to stay focused."
+        raise ValueError(
+            f"Voice '{voice}' not found in config with available keys: {voices.keys()}"
         )
+    return voice_config
 
-    persona_file = voice_config.get("persona_file")
-    if not persona_file:
-        return (
-            "You are a focus accountability assistant. Remind the user to stay focused."
-        )
 
-    persona_path = Path("src") / persona_file
-    if not persona_path.exists():
-        return (
-            "You are a focus accountability assistant. Remind the user to stay focused."
-        )
-
-    return persona_path.read_text().strip()
+def get_persona_prompt(voice: str) -> str:
+    """Load persona prompt text file for a voice."""
+    voice_config = get_voice_config(voice)
+    default_config = """
+        You are a focus accountability assistant. Remind the user to stay focused.
+        Be firm. Be assertive. Be dramatic. Remind them what's at stake.
+        Then lighten the mood by being silly from time to time.
+        """
+    try:
+        persona_file = voice_config.get("persona_file")
+        persona_path = Path("src") / persona_file
+        return persona_path.read_text().strip()
+    except Exception("Failed to retrieve persona prompt") as e:
+        logger.error(e)
+        return default_config
 
 
 def get_focus_thresholds() -> Dict[str, int]:

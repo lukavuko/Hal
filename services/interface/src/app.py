@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from api_server import get_shared_state, start_api_server, update_shared_state
 from PIL import Image
 
@@ -16,11 +17,26 @@ CALIBRATION_PATH = Path("/app/data/calibration.jpg")
 DATA_DIR = Path("/app/data")
 DATA_DIR.mkdir(exist_ok=True)
 
+# Internal Docker URL for server-side API calls
 BACKEND_URL = st.secrets.get("BACKEND_URL", "http://backend:5000")
+
+# Browser-accessible URL for MJPEG stream (exposed Docker port)
+STREAM_URL = st.secrets.get("STREAM_URL", "http://localhost:5000")
 
 st.set_page_config(
     page_title="Hal - Focus Monitor", layout="wide", initial_sidebar_state="expanded"
 )
+
+
+def get_webcam_dimensions() -> Dict[str, int]:
+    """Get webcam dimensions from backend."""
+    try:
+        response = requests.get(f"{BACKEND_URL}/vision/dimensions", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except requests.exceptions.RequestException:
+        pass
+    return {"width": 640, "height": 480}
 
 
 def initialize_session_state():
@@ -34,13 +50,7 @@ def initialize_session_state():
     if "sampling_active" not in st.session_state:
         st.session_state.sampling_active = False
     if "focus_history" not in st.session_state:
-        st.session_state.focus_history = (
-            []
-        )  # List of {"timestamp": datetime, "score": int}
-    if "latest_image_b64" not in st.session_state:
-        st.session_state.latest_image_b64 = None
-    if "latest_timestamp" not in st.session_state:
-        st.session_state.latest_timestamp = None
+        st.session_state.focus_history = []
     if "current_state" not in st.session_state:
         st.session_state.current_state = "UNKNOWN"
     if "current_score" not in st.session_state:
@@ -48,7 +58,25 @@ def initialize_session_state():
     if "persona" not in st.session_state:
         st.session_state.persona = "Hal"
     if "pending_audio" not in st.session_state:
-        st.session_state.pending_audio = None  # WAV bytes to play
+        st.session_state.pending_audio = None
+    if "webcam_dims" not in st.session_state:
+        st.session_state.webcam_dims = get_webcam_dimensions()
+    if "calibration_image" not in st.session_state:
+        st.session_state.calibration_image = None
+
+
+def render_video_stream(width: int = 640, height: int = 480):
+    """Render live MJPEG video stream using HTML component."""
+    stream_html = f"""
+    <div style="display: flex; justify-content: center;">
+        <img src="{STREAM_URL}/vision/stream"
+             width="{width}"
+             height="{height}"
+             style="border-radius: 8px; border: 2px solid #333;"
+             alt="Live webcam stream" />
+    </div>
+    """
+    components.html(stream_html, height=height + 20)
 
 
 def capture_and_analyze() -> Optional[Dict]:
@@ -57,16 +85,10 @@ def capture_and_analyze() -> Optional[Dict]:
         # Request capture from vision service
         capture_response = requests.post(f"{BACKEND_URL}/vision/capture", timeout=10)
         if capture_response.status_code != 200:
-            st.error(f"Capture failed: {capture_response.text}")
             return None
 
-        # Store the image
         image_bytes = capture_response.content
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         timestamp = datetime.now()
-
-        st.session_state.latest_image_b64 = image_b64
-        st.session_state.latest_timestamp = timestamp
 
         # Send to vision service for analysis
         analyze_response = requests.post(
@@ -76,7 +98,6 @@ def capture_and_analyze() -> Optional[Dict]:
         )
 
         if analyze_response.status_code != 200:
-            st.warning(f"Analysis failed: {analyze_response.text}")
             return None
 
         analysis = analyze_response.json()
@@ -106,7 +127,6 @@ def capture_and_analyze() -> Optional[Dict]:
         update_shared_state(
             {
                 "state": state,
-                "latest_image": image_b64,
                 "latest_analysis": analysis,
                 "focus_score": focus_score,
             }
@@ -118,8 +138,7 @@ def capture_and_analyze() -> Optional[Dict]:
 
         return analysis
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"Service communication error: {e}")
+    except requests.exceptions.RequestException:
         return None
 
 
@@ -145,14 +164,12 @@ def trigger_mind_response(analysis: Dict):
                 )
 
                 if speech_response.status_code == 200:
-                    # Store audio bytes for playback
                     st.session_state.pending_audio = speech_response.content
 
-                # Log the response
                 update_shared_state({"last_response": response_text})
 
-    except requests.exceptions.RequestException as e:
-        st.warning(f"Mind service error: {e}")
+    except requests.exceptions.RequestException:
+        pass
 
 
 def calibration_wizard():
@@ -166,48 +183,67 @@ def calibration_wizard():
     col1, col2 = st.columns(2)
 
     with col1:
-        # Preview button
-        if st.button("Preview Camera", width="stretch"):
-            try:
-                response = requests.post(f"{BACKEND_URL}/vision/capture", timeout=10)
-                if response.status_code == 200:
-                    img = Image.open(BytesIO(response.content))
-                    st.image(img, caption="Camera Preview", width="stretch")
-                else:
-                    st.error(f"Failed to get preview: {response.text}")
-            except Exception as e:
-                st.error(f"Cannot connect to vision service: {e}")
+        st.subheader("Live Camera Feed")
+        dims = st.session_state.webcam_dims
+        render_video_stream(width=dims["width"], height=dims["height"])
 
-        if st.button("Capture Calibration Image", type="primary", width="stretch"):
+        if st.button(
+            "Capture Calibration Image", type="primary", use_container_width=True
+        ):
             try:
                 response = requests.post(f"{BACKEND_URL}/vision/capture", timeout=10)
                 if response.status_code == 200:
                     img_data = response.content
                     CALIBRATION_PATH.write_bytes(img_data)
 
-                    # Also send to vision service to store as reference
+                    # Store for display
+                    st.session_state.calibration_image = img_data
+
+                    # Send to vision service to store as reference
                     requests.post(
                         f"{BACKEND_URL}/vision/calibrate",
                         files={"image": ("calibration.jpg", img_data, "image/jpeg")},
                         timeout=10,
                     )
 
-                    st.success("Calibration successful!")
-                    time.sleep(1)
-                    st.session_state.calibrated = True
-                    st.rerun()
+                    st.success("Calibration image captured! Review it on the right.")
                 else:
                     st.error(f"Failed to capture: {response.text}")
             except Exception as e:
                 st.error(f"Cannot connect to vision service: {e}")
 
     with col2:
-        if CALIBRATION_PATH.exists():
+        st.subheader("Calibration Image")
+
+        # Show captured calibration image
+        if st.session_state.calibration_image:
+            img = Image.open(BytesIO(st.session_state.calibration_image))
+            st.image(
+                img, caption="Captured Calibration Image", use_container_width=True
+            )
+
+            col_confirm, col_retry = st.columns(2)
+            with col_confirm:
+                if st.button(
+                    "Confirm & Start", type="primary", use_container_width=True
+                ):
+                    st.session_state.calibrated = True
+                    st.rerun()
+            with col_retry:
+                if st.button("Retake", use_container_width=True):
+                    st.session_state.calibration_image = None
+                    st.rerun()
+        elif CALIBRATION_PATH.exists():
             st.image(
                 str(CALIBRATION_PATH),
-                caption="Current Calibration",
-                width="stretch",
+                caption="Previous Calibration",
+                use_container_width=True,
             )
+            if st.button("Use This & Start", type="primary", use_container_width=True):
+                st.session_state.calibrated = True
+                st.rerun()
+        else:
+            st.info("Capture an image from the live feed to set your calibration.")
 
 
 def render_focus_chart():
@@ -222,7 +258,6 @@ def render_focus_chart():
 
     fig = go.Figure()
 
-    # Add the focus score line
     fig.add_trace(
         go.Scatter(
             x=timestamps,
@@ -234,7 +269,6 @@ def render_focus_chart():
         )
     )
 
-    # Add threshold lines
     fig.add_hline(
         y=50, line_dash="dash", line_color="yellow", annotation_text="Yellow threshold"
     )
@@ -251,7 +285,7 @@ def render_focus_chart():
         margin=dict(l=50, r=50, t=50, b=50),
     )
 
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def main_dashboard():
@@ -285,27 +319,27 @@ def main_dashboard():
         st.metric("Uptime", shared_state.get("uptime", "00:00:00"))
 
     with col3:
-        # Sampling control
         if st.session_state.sampling_active:
-            if st.button("Stop Sampling", type="secondary", width="stretch"):
+            if st.button("Stop Sampling", type="secondary", use_container_width=True):
                 st.session_state.sampling_active = False
                 update_shared_state({"sampling_active": False})
                 st.rerun()
         else:
-            if st.button("Start Sampling", type="primary", width="stretch"):
+            if st.button("Start Sampling", type="primary", use_container_width=True):
                 st.session_state.sampling_active = True
                 update_shared_state({"sampling_active": True})
                 st.rerun()
 
     with col4:
-        if st.button("Recalibrate", width="stretch"):
+        if st.button("Recalibrate", use_container_width=True):
             CALIBRATION_PATH.unlink(missing_ok=True)
             st.session_state.calibrated = False
+            st.session_state.calibration_image = None
             st.rerun()
 
     # Sampling status indicator
     if st.session_state.sampling_active:
-        st.success("Sampling ACTIVE - Capturing every 10 seconds")
+        st.success("Sampling ACTIVE - Analyzing every 10 seconds")
     else:
         st.warning("Sampling PAUSED - Click 'Start Sampling' to begin monitoring")
 
@@ -315,24 +349,9 @@ def main_dashboard():
     col_main, col_side = st.columns([2, 1])
 
     with col_main:
-        st.subheader("Latest Webcam Capture")
-
-        if st.session_state.latest_image_b64:
-            try:
-                img = Image.open(
-                    BytesIO(base64.b64decode(st.session_state.latest_image_b64))
-                )
-                st.image(img, width="stretch")
-
-                # Display timestamp below image
-                if st.session_state.latest_timestamp:
-                    st.caption(
-                        f"Captured at: {st.session_state.latest_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
-            except Exception as e:
-                st.warning(f"Cannot display image: {e}")
-        else:
-            st.info("Waiting for first capture... Start sampling to begin.")
+        st.subheader("Live Webcam Feed")
+        dims = st.session_state.webcam_dims
+        render_video_stream(width=dims["width"], height=dims["height"])
 
         # Focus Analysis section
         st.subheader("Focus Analysis")
@@ -340,7 +359,7 @@ def main_dashboard():
         if analysis:
             st.write(f"**Observations:** {analysis.get('observations', 'None')}")
         else:
-            st.info("No analysis yet...")
+            st.info("No analysis yet. Start sampling to begin monitoring.")
 
     with col_side:
         # Persona selection
@@ -366,8 +385,7 @@ def main_dashboard():
                 update_shared_state({"persona": selected_persona})
                 st.success(f"Switched to {selected_persona}")
 
-            # Test audio button
-            if st.button("Test Audio", width="stretch"):
+            if st.button("Test Audio", use_container_width=True):
                 try:
                     speech_response = requests.post(
                         f"{BACKEND_URL}/speech/speak",
@@ -401,11 +419,10 @@ def main_dashboard():
             st.subheader("Last Response")
             st.info(shared_state["last_response"])
 
-        # Audio Player - plays pending audio with autoplay
+        # Audio Player
         if st.session_state.pending_audio:
             st.subheader("Audio Response")
             st.audio(st.session_state.pending_audio, format="audio/wav", autoplay=True)
-            # Clear after displaying (will play once)
             st.session_state.pending_audio = None
 
     st.divider()
@@ -414,13 +431,10 @@ def main_dashboard():
     st.subheader("Focus History")
     render_focus_chart()
 
-    # Auto-refresh when sampling is active
+    # Auto-analyze when sampling is active (stream handles display)
     if st.session_state.sampling_active:
-        # Capture and analyze
-        with st.spinner("Capturing..."):
+        with st.spinner("Analyzing..."):
             capture_and_analyze()
-
-        # Schedule next capture in 10 seconds
         time.sleep(10)
         st.rerun()
 

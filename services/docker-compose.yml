@@ -32,14 +32,13 @@ services:
       - video
     environment:
       - PORT=5000
-      # Use host Ollama (running natively on Windows)
-      - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_URL=http://ollama:11434
       - PIPER_CACHE=/app/models
       - USE_CUDA=true
       - CONFIG_PATH=src/models.yml
-    # develop:
-    #   watch:
-    #     - action: sync+restart
+    depends_on:
+      ollama:
+        condition: service_healthy
     networks:
       - hal-network
     restart: unless-stopped
@@ -51,33 +50,32 @@ services:
               count: 1
               capabilities: [gpu]
 
-  # Ollama - LLM inference server (optional if running natively)
-  # Uncomment this service if you want Ollama in Docker instead of native
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: hal-ollama
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama-models:/root/.ollama
-  #   environment:
-  #     - OLLAMA_HOST=0.0.0.0
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #     start_period: 30s
-  #   networks:
-  #     - hal-network
-  #   restart: unless-stopped
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #           - count: 1
-  #             capabilities: [gpu]
+  # Ollama - LLM inference server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hal-ollama
+    # Port not exposed to host - backend uses internal Docker network (http://ollama:11434)
+    # Uncomment below if you need external access: ports: ["11435:11434"]
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - hal-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 volumes:
   hal-data:

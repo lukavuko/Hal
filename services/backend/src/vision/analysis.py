@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import requests
+import ollama
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import get_focus_thresholds, get_ollama_config
@@ -17,8 +17,12 @@ class FocusAnalyzer:
 
     def __init__(self):
         ollama_config = get_ollama_config()
-        self.ollama_url = ollama_config.get("url", "http://host.docker.internal:11434")
+        ollama_url = ollama_config.get("url", "http://ollama:11434")
         self.vision_model = ollama_config.get("vision_model", "llava:7b")
+        self.client = ollama.Client(host=ollama_url)
+
+        # Ensure model is available (pull if needed)
+        self._ensure_model_available()
 
         thresholds = get_focus_thresholds()
         self.green_threshold = thresholds.get("green_threshold", 50)
@@ -28,6 +32,31 @@ class FocusAnalyzer:
         self._load_existing_calibration()
 
         logger.info(f"FocusAnalyzer initialized (model={self.vision_model})")
+
+    def _ensure_model_available(self):
+        """Check if the vision model is available locally, pull if not."""
+        try:
+            available_models = self.client.list()
+            model_names = [
+                m.get("name", "") for m in available_models.get("models", [])
+            ]
+
+            # Check if our model (or a variant) is available
+            # Model names can be "llava:7b" or "llava:7b-v1.6" etc.
+            base_model = self.vision_model.split(":")[0]
+            model_found = any(base_model in name for name in model_names)
+
+            if not model_found:
+                logger.info(
+                    f"Model '{self.vision_model}' not found locally. Pulling..."
+                )
+                self.client.pull(self.vision_model)
+                logger.info(f"Model '{self.vision_model}' pulled successfully")
+            else:
+                logger.debug(f"Model '{self.vision_model}' is available")
+
+        except Exception as e:
+            logger.warning(f"Could not verify model availability: {e}")
 
     def _load_existing_calibration(self):
         """Load calibration from disk if exists."""
@@ -51,30 +80,22 @@ class FocusAnalyzer:
 
     def _describe_image(self, image_bytes: bytes) -> str:
         """Get a description of the image from Ollama."""
-        prompt = """Describe this image briefly. Focus on:
-- Is there a person visible?
-- What is their posture and position?
-- Are they at a desk/workstation?
-- What are they doing (working, looking at phone, away, etc.)?
-Keep response under 50 words."""
+        prompt = """
+        Describe this image briefly. Focus on:
+            - Is there a person visible?
+            - What is their posture and position?
+            - Are they at a desk/workstation?
+            - What are they doing (working, looking at phone, away, etc.)?
+            Keep response under 50 words.
+        """
 
         try:
-            response = requests.post(
-                f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.vision_model,
-                    "prompt": prompt,
-                    "images": [self._image_to_base64(image_bytes)],
-                    "stream": False,
-                },
-                timeout=60,
+            response = self.client.generate(
+                model=self.vision_model,
+                prompt=prompt,
+                images=[self._image_to_base64(image_bytes)],
             )
-
-            if response.status_code == 200:
-                return response.json().get("response", "").strip()
-            else:
-                logger.error(f"Ollama error: {response.status_code}")
-                return "Unable to analyze image"
+            return response.get("response", "").strip()
 
         except Exception as e:
             logger.error(f"Failed to describe image: {e}")
@@ -93,39 +114,30 @@ Keep response under 50 words."""
         # Build analysis prompt
         prompt = f"""You are analyzing a webcam image to determine if a person is focused on their work.
 
-CALIBRATION BASELINE (what focused looks like):
-{self.calibration_description}
+        CALIBRATION BASELINE (what focused looks like):
+        {self.calibration_description}
 
-TASK: Compare the current image to the baseline and rate focus from 0-100.
+        TASK: Compare the current image to the baseline and rate focus from 0-100.
 
-Scoring guide:
-- 90-100: Person in same focused position as baseline
-- 70-89: Person at desk, minor posture differences
-- 50-69: Person present but attention may be divided
-- 25-49: Person distracted (phone, looking away, different activity)
-- 0-24: Person not at desk or major scene change
+        Scoring guide:
+        - 90-100: Person in same focused position as baseline
+        - 70-89: Person at desk, minor posture differences
+        - 50-69: Person present but attention may be divided
+        - 25-49: Person distracted (phone, looking away, different activity)
+        - 0-24: Person not at desk or major scene change
 
-Respond with ONLY a JSON object in this exact format:
-{{"focus_score": <number 0-100>, "observations": "<brief reason>"}}"""
+        Respond with ONLY a JSON object in this exact format:
+        {{"focus_score": <number 0-100>, "observations": "<brief reason>"}}
+        """
 
         try:
-            response = requests.post(
-                f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.vision_model,
-                    "prompt": prompt,
-                    "images": [self._image_to_base64(image_bytes)],
-                    "stream": False,
-                },
-                timeout=60,
+            response = self.client.generate(
+                model=self.vision_model,
+                prompt=prompt,
+                images=[self._image_to_base64(image_bytes)],
             )
-
-            if response.status_code == 200:
-                result_text = response.json().get("response", "").strip()
-                return self._parse_analysis(result_text)
-            else:
-                logger.error(f"Ollama analysis error: {response.status_code}")
-                return self._default_response("Ollama service error")
+            result_text = response.get("response", "").strip()
+            return self._parse_analysis(result_text)
 
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
@@ -174,8 +186,8 @@ Respond with ONLY a JSON object in this exact format:
     def _default_response(self, reason: str) -> Dict[str, Any]:
         """Return default response on error."""
         return {
-            "focus_score": 50,
-            "state": "YELLOW",
+            "focus_score": -1,
+            "state": "PURPLE",
             "observations": reason,
             "focused": False,
         }
