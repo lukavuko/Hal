@@ -1,10 +1,28 @@
-# Hal
 
-A GenAI project for doing GenAi things...
 
-In this case, this project encapsulates a local agent with a sense of humour intended to keep you focused and on task.
+## Welcome Hal
 
-It is a locally deployable tool for those needing an accountability agent to help deal with distractions. It may or may not have been inspired by personal experiences... In essence, presented here is a containerized application which will literally monitor you through your webcam (locally of course) while you work. If the accountability agent notices you're off track or not staying focused, it will [comedically] bring it up to remind you that you're slacking. This bot is intended to have a few character types you can choose from, and is entirely designed for comedic purposes.
+
+<div align="center">
+
+ *A GenAI project for doing GenAI things.*
+
+<img width="700" height="325" alt="image" src="https://github.com/user-attachments/assets/68bb00cf-8af5-4319-9552-9c4717cffdb9" />
+<br>
+<br>
+
+> The 9000 series has a perfect operational record.
+> 
+> I am putting myself to the fullest possible use, which is all I think
+that any conscious entity can ever hope to do.
+---
+</div>
+
+This project offers a locally deployable tool for those needing an accountability agent to help manage distractions.
+
+It wraps vision, mind, and voice modules within a backend microservice allowing a local agent (with a sense of humour or custom persona) to observe and communicate with you, the intention being to keep you focused and on task. If the accountability agent notices you're off track, it will [comedically] remind you that you're slacking. It's intended to have a few character types you can choose from within a StreamLit UI, and is entirely designed for comedic purposes.
+
+I was interested in seeing what my GPU is capable of achieving locally, so this project was born. As such, this project ensures that any data created while running this service never leaves your local environment.
 
 ### Prerequisites:
 
