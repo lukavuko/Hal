@@ -1,8 +1,10 @@
 # Hal
 
-A local agent intended to keep you focused and on task.
+A GenAI project for doing GenAi things...
 
-This is a locally deployed tool for those needing an accountability agent to help deal with distractions. It may or may not have been inspired by personal experiences... In essence, presented here is a containerized application which will literally monitor you through your webcam (locally of course) while you work. If the accountability agent notices you're off track or not staying focused, it will [comedically] bring it up to remind you that you're slacking. This bot is intended to have a few character types you can choose from, and is entirely designed for comedic purposes.
+In this case, this project encapsulates a local agent with a sense of humour intended to keep you focused and on task.
+
+It is a locally deployable tool for those needing an accountability agent to help deal with distractions. It may or may not have been inspired by personal experiences... In essence, presented here is a containerized application which will literally monitor you through your webcam (locally of course) while you work. If the accountability agent notices you're off track or not staying focused, it will [comedically] bring it up to remind you that you're slacking. This bot is intended to have a few character types you can choose from, and is entirely designed for comedic purposes.
 
 ### Prerequisites:
 
